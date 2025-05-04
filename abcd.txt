@@ -1,3 +1,5 @@
+2wdozTE9fK7PxEw5qgEevdXZV9f_3HhtmRPg9mgeYbRnT2wgB
+
 # Step 1: Create the PowerShell Reverse Shell (payload.ps1)
 # This script will create a reverse TCP connection back to your Kali machine and provide a Meterpreter shell once executed by the victim.
 
